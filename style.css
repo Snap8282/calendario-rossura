@@ -162,7 +162,8 @@ button.link-btn {
 }
 
 .modal input,
-.modal select {
+.modal select,
+.modal textarea {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
@@ -358,6 +359,7 @@ button.link-btn {
 
   .modal input,
   .modal select,
+  .modal textarea,
   button.secondary,
   button.danger {
     background: #111827;

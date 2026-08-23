@@ -5,15 +5,14 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const IDENTITY_KEY = "familyCalendar.identity";
 
-// 8 tinte validate per accessibilita (color-blind safe), ciascuna in due
-// tonalita (chiara/scura) per ottenere 16 colori distinguibili - a >16
-// persone i colori si ripetono, ma il nome e sempre scritto sull'evento,
-// quindi l'identita non dipende mai dal solo colore.
+// 16 colori volutamente diversi per distinguere meglio le prenotazioni.
+// L'admin usa sempre il grigio.
+const ADMIN_COLOR = "#6b7280";
 const COLOR_PALETTE = [
-  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-  "#3987e5", "#d95926", "#199e70", "#c98500",
-  "#d55181", "#008300", "#9085e9", "#e66767",
+  "#2563eb", "#dc2626", "#16a34a", "#ca8a04",
+  "#9333ea", "#0891b2", "#ea580c", "#be185d",
+  "#4f46e5", "#65a30d", "#c026d3", "#0f766e",
+  "#b45309", "#e11d48", "#0284c7", "#7c2d12",
 ];
 
 let members = [];      // [{id, name, is_admin, has_pin}]
@@ -51,7 +50,10 @@ function currentMember() {
 }
 
 function colorForMember(memberId) {
-  const idx = members.findIndex((m) => m.id === memberId);
+  const member = membersById[memberId];
+  if (member && member.is_admin) return ADMIN_COLOR;
+  const nonAdminMembers = members.filter((m) => !m.is_admin);
+  const idx = nonAdminMembers.findIndex((m) => m.id === memberId);
   return COLOR_PALETTE[Math.max(idx, 0) % COLOR_PALETTE.length];
 }
 
@@ -109,7 +111,7 @@ function populateNameSelect(selectEl) {
 
 function populateMemberSelect(selectEl, selectedId) {
   selectEl.innerHTML = "";
-  for (const m of members.filter((member) => !member.is_admin)) {
+  for (const m of members) {
     const opt = document.createElement("option");
     opt.value = m.id;
     opt.textContent = m.name;
@@ -163,7 +165,7 @@ function setupIdentifyUI(ids) {
     const pin = newPinInput.value.trim();
     const confirmPin = newPinConfirmInput.value.trim();
     if (!member) return showModalError(setPinErrorEl, "Scegli prima il tuo nome.");
-    if (pin.length < 6) return showModalError(setPinErrorEl, "La password deve avere almeno 6 caratteri.");
+    if (pin.length < 4) return showModalError(setPinErrorEl, "La password deve avere almeno 4 caratteri.");
     if (pin !== confirmPin) return showModalError(setPinErrorEl, "Le password non coincidono.");
 
     const { error } = await sb.rpc("set_pin", { p_member_name: member.name, p_pin: pin });
@@ -552,7 +554,7 @@ function openBookingDetails(booking) {
 
   el("event-title").textContent = member ? member.name : "Sconosciuto";
   el("event-dates").textContent = `${start} -> ${end} (giorno di check-out)`;
-  el("event-note").textContent = booking.note || "";
+  el("event-note").textContent = booking.note ? `Nota: ${booking.note}` : "Nessuna nota.";
 
   el("event-edit-fields").classList.add("hidden");
   el("event-edit-start").value = start;

@@ -77,8 +77,8 @@ as $$
 declare
   v_member members;
 begin
-  if length(p_pin) < 6 then
-    raise exception 'Password must be at least 6 characters';
+  if length(p_pin) < 4 then
+    raise exception 'Password must be at least 4 characters';
   end if;
 
   select * into v_member from members where name = p_member_name;
@@ -308,8 +308,4 @@ insert into public.members (name, is_admin) values
    ('Cecilia', false),
    ('Paola', false),
    ('Milo', false);
-
-
-
-
 
