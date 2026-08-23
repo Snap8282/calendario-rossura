@@ -446,6 +446,7 @@ function initCalendar() {
     dayHeaderContent: (info) => capitalizeFirst(info.text),
     height: "auto",
     selectable: false,
+    dateIncrement: { months: 1 },
     headerToolbar: { left: "prev,next today", center: "title", right: "" },
     views: {
       multiMonthYear: {
@@ -649,26 +650,4 @@ window.addEventListener("resize", scheduleCalendarOverlayRender);
     localStorage.removeItem(IDENTITY_KEY);
   }
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
