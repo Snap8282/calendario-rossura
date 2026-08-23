@@ -1,0 +1,147 @@
+﻿<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendario Casa Rossura</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales-all.global.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Calendario Casa Rossura</h1>
+    <div id="identity-bar" class="identity-bar">
+      <span class="loading">Caricamento...</span>
+    </div>
+  </header>
+
+  <p id="error-banner" class="error-banner hidden"></p>
+
+  <main>
+    <!-- Accesso obbligatorio: il calendario resta nascosto finche non ci si identifica -->
+    <section id="login-gate" class="login-gate">
+      <div class="modal login-gate-box">
+        <h2>Accedi a Casa Rossura</h2>
+        <label>
+          Nome
+          <select id="gate-name"></select>
+        </label>
+
+        <div id="gate-existing-password">
+          <label>
+            Password
+            <input type="password" id="gate-password" autocomplete="current-password" placeholder="Password" />
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="gate-remember" checked />
+            Ricordami su questo dispositivo
+          </label>
+          <p id="gate-error" class="modal-error hidden"></p>
+          <div class="modal-actions">
+            <button id="gate-submit" class="primary">Continua</button>
+          </div>
+        </div>
+
+        <div id="gate-new-password" class="hidden">
+          <p class="hint">Nessuna password impostata per questo nome - impostane una ora (almeno 6 caratteri).</p>
+          <label>
+            Scegli una password
+            <input type="password" id="gate-new-password-input" autocomplete="new-password" placeholder="Almeno 6 caratteri" />
+          </label>
+          <label>
+            Conferma password
+            <input type="password" id="gate-new-password-confirm" autocomplete="new-password" placeholder="Ripeti la password" />
+          </label>
+          <p id="gate-set-password-error" class="modal-error hidden"></p>
+          <div class="modal-actions">
+            <button id="gate-set-password-submit" class="primary">Imposta password e continua</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="calendar-hero" class="calendar-hero hidden" aria-label="Casa Rossura">
+      <div>
+        <p>Casa Rossura</p>
+        <h2>Calendario prenotazioni</h2>
+      </div>
+    </section>
+
+    <div id="calendar" class="hidden"></div>
+  </main>
+
+  <!-- Modale nuova prenotazione -->
+  <div id="booking-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2>Nuova prenotazione</h2>
+      <label id="booking-member-label" class="hidden">
+        Prenota per
+        <select id="booking-member"></select>
+      </label>
+      <label>
+        Data di inizio (check-in)
+        <input type="date" id="booking-start" />
+      </label>
+      <label>
+        Data di fine (check-out)
+        <input type="date" id="booking-end" />
+      </label>
+      <label>
+        Nota (facoltativa)
+        <input type="text" id="booking-note" placeholder="es. Vacanza estiva con i bambini" />
+      </label>
+      <p id="booking-error" class="modal-error hidden"></p>
+      <div class="modal-actions">
+        <button id="booking-submit" class="primary">Prenota</button>
+        <button id="booking-cancel" class="secondary">Annulla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale visualizza / modifica / elimina prenotazione -->
+  <div id="event-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <h2 id="event-title">Prenotazione</h2>
+      <p id="event-dates" class="hint"></p>
+      <p id="event-note"></p>
+
+      <div id="event-edit-fields" class="hidden">
+        <label>
+          Data di inizio
+          <input type="date" id="event-edit-start" />
+        </label>
+        <label>
+          Data di fine (giorno di check-out)
+          <input type="date" id="event-edit-end" />
+        </label>
+        <label>
+          Nota
+          <input type="text" id="event-edit-note" />
+        </label>
+      </div>
+
+      <p id="event-error" class="modal-error hidden"></p>
+      <div class="modal-actions">
+        <button id="event-edit-btn" class="secondary hidden">Modifica</button>
+        <button id="event-save-btn" class="primary hidden">Salva modifiche</button>
+        <button id="event-delete-btn" class="danger hidden">Elimina</button>
+        <button id="event-close-btn" class="secondary">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
