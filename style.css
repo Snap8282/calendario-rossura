@@ -1,6 +1,6 @@
 ﻿:root {
   color-scheme: light dark;
-  --rossura-image: url("https://upload.wikimedia.org/wikipedia/commons/c/c1/Rossura.JPG");
+  --rossura-image: url("assets/1920px-Rossura.jpg");
   --ink: #1f2937;
   --muted: #6b7280;
   --border: #e5e7eb;
@@ -420,8 +420,4 @@ button.link-btn {
   .fc-highlight {
     background: rgba(139, 156, 255, 0.2) !important;
   }}
-
-
-
-
 
