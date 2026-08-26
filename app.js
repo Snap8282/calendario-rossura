@@ -1,4 +1,4 @@
-﻿// Calendario Casa di Famiglia - logica dell'app.
+// Calendario Casa di Famiglia - logica dell'app.
 // Parla direttamente con Supabase (vedi config.js + supabase/schema.sql). Nessun build step.
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -21,8 +21,6 @@ let identity = loadIdentity(); // {name, pin/password} | null
 let calendar = null;
 let bookingsCache = []; // ultime prenotazioni caricate, per il controllo di sovrapposizione lato client
 let pendingCheckinDate = null;
-let resizeTimer = null;
-let calendarResizeObserver = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -57,24 +55,8 @@ function colorForMember(memberId) {
   return COLOR_PALETTE[Math.max(idx, 0) % COLOR_PALETTE.length];
 }
 
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function compareDates(a, b) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 function rangesOverlap(startA, endA, startB, endB) {
   return startA < endB && startB < endA;
-}
-
-function daysBetween(startStr, endStr) {
-  const start = new Date(startStr + "T00:00:00Z");
-  const end = new Date(endStr + "T00:00:00Z");
-  return Math.max(1, Math.round((end - start) / 86400000));
 }
 
 function capitalizeFirst(value) {
@@ -267,111 +249,80 @@ async function loadMembers() {
 // Calendario
 // ---------------------------------------------------------------------------
 
-async function fetchEvents(fetchInfo, successCallback, failureCallback) {
+async function loadBookings() {
   const { data, error } = await sb.from("bookings").select("*");
   if (error) {
     showError("Impossibile caricare le prenotazioni: " + error.message);
-    failureCallback(error);
-    return;
+    return false;
   }
 
   bookingsCache = data;
-
-  const events = [];
-  for (const b of data) {
-    const member = membersById[b.member_id];
-    const color = colorForMember(b.member_id);
-
-    events.push({
-      id: b.id,
-      title: (member ? member.name : "Sconosciuto") + (b.note ? `: ${b.note}` : ""),
-      start: b.start_date,
-      end: b.end_date,
-      display: "none",
-      backgroundColor: color,
-      borderColor: color,
-      extendedProps: { memberId: b.member_id, note: b.note || "", realStart: b.start_date, realEnd: b.end_date },
-    });
-  }
-  successCallback(events);
-  requestAnimationFrame(renderCalendarOverlays);
+  renderBookingFragments();
+  return true;
 }
 
-function bookingsForDay(dateStr) {
+function bookingsForDate(dateStr) {
   return bookingsCache
-    .filter((b) => compareDates(b.start_date, dateStr) <= 0 && compareDates(dateStr, b.end_date) <= 0)
-    .sort((a, b) => compareDates(a.start_date, b.start_date) || compareDates(a.end_date, b.end_date));
+    .filter((booking) => booking.start_date <= dateStr && dateStr <= booking.end_date)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
 }
 
-function renderBookingBars() {
-  if (!calendar) return;
-  const calendarEl = el("calendar");
-  const calendarRect = calendarEl.getBoundingClientRect();
-  document.querySelectorAll(".booking-strip").forEach((node) => node.remove());
-  document.querySelectorAll(".fc-daygrid-day-frame").forEach((frame) => frame.classList.remove("has-booking-strips"));
+function renderBookingFragmentsForCell(cell, dateStr) {
+  const frame = cell.querySelector(".fc-daygrid-day-frame");
+  if (!frame) return;
 
-  for (const booking of bookingsCache) {
+  frame.querySelectorAll(".booking-strip").forEach((node) => node.remove());
+  frame.classList.remove("has-booking-strips");
+  if (cell.classList.contains("fc-day-other")) return;
+
+  const dayBookings = bookingsForDate(dateStr);
+  if (!dayBookings.length) return;
+  frame.classList.add("has-booking-strips");
+
+  for (const booking of dayBookings) {
     const member = membersById[booking.member_id];
     const title = member ? member.name : "Sconosciuto";
-    const cells = Array.from(document.querySelectorAll(".fc-daygrid-day[data-date]"))
-      .map((cell) => ({ cell, date: cell.getAttribute("data-date") }))
-      .filter((item) => booking.start_date <= item.date && item.date <= booking.end_date)
-      .sort((a, b) => compareDates(a.date, b.date));
+    const startsHere = booking.start_date === dateStr;
+    const endsHere = booking.end_date === dateStr;
 
-    cells.forEach(({ cell }) => {
-      const frame = cell.querySelector(".fc-daygrid-day-frame");
-      if (frame) frame.classList.add("has-booking-strips");
+    const strip = document.createElement("button");
+    strip.type = "button";
+    strip.className = "booking-strip";
+    strip.style.setProperty("--strip-color", colorForMember(booking.member_id));
+    strip.style.left = startsHere ? "50%" : "0";
+    strip.style.top = "32px";
+    strip.style.width = startsHere || endsHere ? "50%" : "100%";
+    strip.style.zIndex = startsHere ? "7" : "6";
+    strip.classList.toggle("starts-here", startsHere);
+    strip.classList.toggle("ends-here", endsHere);
+
+    const label = document.createElement("span");
+    label.className = "booking-strip-label";
+    label.textContent = startsHere ? title : "";
+    strip.appendChild(label);
+
+    strip.title = `${title}: ${booking.start_date} -> ${booking.end_date}`;
+    strip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openBookingDetails(booking);
     });
-
-    let segment = [];
-    let segmentRow = null;
-    const segments = [];
-    for (const item of cells) {
-      const row = Math.round(item.cell.getBoundingClientRect().top);
-      if (segment.length && row !== segmentRow) {
-        segments.push(segment);
-        segment = [];
-      }
-      segment.push(item);
-      segmentRow = row;
-    }
-    if (segment.length) segments.push(segment);
-
-    segments.forEach((items, index) => {
-      const first = items[0];
-      const last = items[items.length - 1];
-      const firstRect = first.cell.getBoundingClientRect();
-      const lastRect = last.cell.getBoundingClientRect();
-      const startsHere = first.date === booking.start_date;
-      const endsHere = last.date === booking.end_date;
-      const leftEdge = startsHere ? firstRect.left + firstRect.width / 2 : firstRect.left;
-      const rightEdge = endsHere ? lastRect.left + lastRect.width / 2 : lastRect.right;
-
-      const strip = document.createElement("button");
-      strip.type = "button";
-      strip.className = "booking-strip";
-      strip.style.setProperty("--strip-color", colorForMember(booking.member_id));
-      strip.style.left = `${leftEdge - calendarRect.left}px`;
-      strip.style.top = `${firstRect.top - calendarRect.top + 32}px`;
-      strip.style.width = `${Math.max(24, rightEdge - leftEdge)}px`;
-      strip.classList.toggle("starts-here", startsHere);
-      strip.classList.toggle("ends-here", endsHere);
-
-      const label = document.createElement("span");
-      label.className = "booking-strip-label";
-      label.textContent = index === 0 ? title : "";
-      strip.appendChild(label);
-
-      strip.title = `${title}: ${booking.start_date} -> ${booking.end_date}`;
-      strip.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openBookingDetails(booking);
-      });
-      calendarEl.appendChild(strip);
-    });
+    frame.appendChild(strip);
   }
 }
 
+function renderBookingFragments() {
+  if (!calendar) return;
+  el("calendar").querySelectorAll(".fc-daygrid-day[data-date]").forEach((cell) => {
+    const dateStr = cell.getAttribute("data-date");
+    if (dateStr) renderBookingFragmentsForCell(cell, dateStr);
+  });
+}
+
+function mountBookingCell(info) {
+  if (info.isOther) return;
+  const dateStr = info.el.getAttribute("data-date");
+  if (dateStr) renderBookingFragmentsForCell(info.el, dateStr);
+}
 function renderClickSelection(checkoutDate = null) {
   document.querySelectorAll(".fc-daygrid-day").forEach((cell) => {
     const dateStr = cell.getAttribute("data-date");
@@ -386,11 +337,6 @@ function renderClickSelection(checkoutDate = null) {
       cell.classList.add("pending-between");
     }
   });
-}
-
-function renderCalendarOverlays() {
-  renderBookingBars();
-  renderClickSelection();
 }
 
 function clearClickSelection() {
@@ -458,20 +404,12 @@ function initCalendar() {
         multiMonthTitleFormat: (date) => capitalizeFirst(date.date.marker.toLocaleDateString("it-CH", { month: "long", year: "numeric" })),
       },
     },
-    events: fetchEvents,
     dateClick: onDateClick,
-    eventClick: onEventClick,
-    datesSet: () => scheduleCalendarOverlayRender(),
+    dayCellDidMount: mountBookingCell,
   });
   calendar.render();
-  if (calendarResizeObserver) calendarResizeObserver.disconnect();
-  if ("ResizeObserver" in window) {
-    calendarResizeObserver = new ResizeObserver(() => scheduleCalendarOverlayRender());
-    calendarResizeObserver.observe(el("calendar"));
-  }
-  scheduleCalendarOverlayRender();
+  loadBookings();
 }
-
 
 // ---------------------------------------------------------------------------
 // Modale nuova prenotazione
@@ -530,7 +468,7 @@ el("booking-submit").addEventListener("click", async () => {
   if (error) return showModalError("booking-error", error.message);
 
   closeBookingModal();
-  calendar.refetchEvents();
+  loadBookings();
 });
 
 // ---------------------------------------------------------------------------
@@ -538,11 +476,6 @@ el("booking-submit").addEventListener("click", async () => {
 // ---------------------------------------------------------------------------
 
 let openEventId = null;
-
-function onEventClick(info) {
-  const booking = bookingsCache.find((b) => b.id === info.event.id);
-  if (booking) openBookingDetails(booking);
-}
 
 function openBookingDetails(booking) {
   openEventId = booking.id;
@@ -595,7 +528,7 @@ el("event-save-btn").addEventListener("click", async () => {
 
   el("event-modal").classList.add("hidden");
   openEventId = null;
-  calendar.refetchEvents();
+  loadBookings();
 });
 
 el("event-delete-btn").addEventListener("click", async () => {
@@ -611,21 +544,9 @@ el("event-delete-btn").addEventListener("click", async () => {
 
   el("event-modal").classList.add("hidden");
   openEventId = null;
-  calendar.refetchEvents();
+  loadBookings();
 });
 
-function scheduleCalendarOverlayRender() {
-  if (!calendar) return;
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (!calendar) return;
-    calendar.updateSize();
-    requestAnimationFrame(() => requestAnimationFrame(renderCalendarOverlays));
-  }, 120);
-}
-
-
-window.addEventListener("resize", scheduleCalendarOverlayRender);
 // ---------------------------------------------------------------------------
 // Avvio
 // ---------------------------------------------------------------------------
@@ -652,4 +573,3 @@ window.addEventListener("resize", scheduleCalendarOverlayRender);
     localStorage.removeItem(IDENTITY_KEY);
   }
 })();
-
