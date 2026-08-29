@@ -1,95 +1,70 @@
-# Family Home Calendar
+# Calendario Casa Rossura
 
-A simple bnb-style booking calendar for family members to reserve the family
-home, without double-booking or accidentally editing someone else's
-reservation.
+A small family booking calendar for Casa Rossura. It prevents overlapping
+reservations and allows an administrator to manage bookings for everyone.
 
-- **Calendar**: [FullCalendar](https://fullcalendar.io/) (drag to select dates, click a booking to view/edit)
-- **Data**: [Supabase](https://supabase.com/) (free hosted Postgres)
-- **Hosting**: static files, works on GitHub Pages
-- No build step, no framework - just `index.html` + `app.js` + `style.css`
+- **Calendar:** FullCalendar
+- **Database:** Supabase Postgres
+- **Hosting:** Static files on GitHub Pages
+- **Build step:** None
 
-## Security model - please read
+## Security model
 
-This app does **not** use real logins (no email/password, no Supabase Auth
-accounts). It's designed like a shared spreadsheet with a light lock on it:
-each family member picks their name and sets a 4-digit PIN once. That PIN
-stops accidental double-bookings and accidental edits to someone else's
-booking - it is **not** meant to protect sensitive data, and there isn't any
-sensitive data in this app (just names and date ranges).
+This app does not use Supabase Auth or personal accounts. A family member
+selects their name and enters a password. The password is checked by
+server-side database functions before any booking is created, changed, or
+deleted.
 
-Because of that:
-- The Supabase **anon/public API key** in `config.js` is safe to commit. It
-  only grants read access plus access to a handful of PIN-checked database
-  functions - see `supabase/schema.sql`. It cannot write to the tables
-  directly.
-- Don't put real personal data (addresses, phone numbers, etc.) in the
-  `note` field, since anyone with the link can read the calendar.
+This is a convenience lock for a private family calendar, not strong
+authentication. Names, booking dates, and notes are readable through the
+public application API. Do not put addresses, phone numbers, or other
+sensitive information in booking notes.
 
-## One-time setup
+The public Supabase key in config.js is expected to be visible. It cannot
+write directly to the tables; writes go through password-checked functions
+defined in supabase/schema.sql.
 
-1. **Create a Supabase project** at [supabase.com](https://supabase.com) (free tier is enough).
-2. Open **SQL Editor** in your Supabase project, paste in the contents of
-   [`supabase/schema.sql`](supabase/schema.sql), and run it.
-3. Add your family members: still in the SQL Editor, run something like:
-   ```sql
-   insert into public.members (name, is_admin) values
-     ('Alice', true),
-     ('Bob', false),
-     ('Carol', false);
-   ```
-   (There's a commented-out example at the bottom of `schema.sql` too.)
-   Everyone starts with no PIN - they'll set their own the first time they
-   use the app.
-4. Get your API credentials: **Project Settings > API** - copy the
-   **Project URL** and the **anon public** key.
-5. Open `config.js` and paste them in:
-   ```js
-   const SUPABASE_URL = "https://xxxxxxxx.supabase.co";
-   const SUPABASE_ANON_KEY = "eyJ...";
-   ```
-6. Push this repo to GitHub, then enable **GitHub Pages** (repo Settings >
-   Pages > deploy from the branch/root).
+## Setup
 
-That's it - share the GitHub Pages URL with your family.
+1. Create a Supabase project.
+2. Run supabase/schema.sql in the Supabase SQL Editor.
+3. Add or update the family members in the public.members table.
+4. Copy the Supabase project URL and anon key into config.js.
+5. Publish the repository with GitHub Pages.
 
-## Using the app
+The seed member list at the bottom of schema.sql is intended for the first
+setup. Running that insert again without changing it will produce duplicate
+name errors.
 
-- **First time**: click "Identify yourself to book", pick your name, and
-  set a 4-digit PIN.
-- **Returning**: pick your name and enter your PIN. Check "Remember me" to
-  skip this next time on the same device.
-- **Book**: drag across the dates you want on the calendar. The end date is
-  the **checkout day** - it's not included in your stay, so the next family
-  member can start their booking that same day.
-- **Edit/delete**: click an existing booking. You'll only see Edit/Delete
-  buttons for your own bookings, unless you're an admin (admins can manage
-  everyone's bookings).
-- Days that are already booked appear greyed out and can't be selected
-  again - overlapping bookings are also rejected by the database itself, so
-  it's not possible even if two people book at the same time.
+## Using the calendar
 
-## Forgot your PIN?
+- Select your name and enter your password.
+- On first use, set a password of at least four characters.
+- Click the check-in date, then click the checkout date.
+- The darker cells are check-in and checkout; cells between them are lighter.
+- The checkout day remains available as another booking's check-in day.
+- Click a coloured booking bar to view its dates and note.
+- Members can edit or delete their own bookings.
+- Administrators can create and manage bookings for any member.
+- Refreshing or closing the page signs you out.
 
-There's no self-service reset (kept intentionally simple). An admin can
-clear it from Supabase: **Table Editor > members**, find your row, clear the
-`pin_hash` cell. You'll be prompted to set a new PIN next time you identify
-yourself.
+## Password reset
+
+There is no self-service reset. In Supabase, open public.members and clear
+the member's pin_hash. That member can set a new password on the next login.
 
 ## Running locally
 
-Just open `index.html` in a browser, or serve the folder with any static
-file server, e.g.:
+Open index.html directly in a browser. A static server also works:
 
-```sh
+~~~sh
 npx serve .
-```
+~~~
 
 ## Files
 
-- `index.html` - page structure and modals
-- `app.js` - all app logic (identity, calendar, booking CRUD)
-- `style.css` - styling
-- `config.js` - your Supabase project URL + anon key
-- `supabase/schema.sql` - database schema, security policies, and the
-  PIN-checked functions used for all writes
+- index.html: page structure and dialogs
+- app.js: login, calendar, and booking behaviour
+- style.css: responsive light and dark styling
+- config.js: Supabase project URL and public key
+- supabase/schema.sql: tables, policies, and booking functions

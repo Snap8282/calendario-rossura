@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: light dark;
   --rossura-image: url("assets/1920px-Rossura.jpg");
   --ink: #1f2937;
@@ -162,8 +162,7 @@ button.link-btn {
 }
 
 .modal input,
-.modal select,
-.modal textarea {
+.modal select {
   display: block;
   width: 100%;
   margin-top: 0.25rem;
@@ -172,17 +171,6 @@ button.link-btn {
   border-radius: 6px;
   font-size: 1rem;
   color: var(--ink);
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.checkbox-label input {
-  width: auto;
-  margin-top: 0;
 }
 
 .hint {
@@ -263,16 +251,11 @@ button.link-btn {
   padding-bottom: 3rem;
 }
 
-.fc .fc-daygrid-day-frame.has-booking-strips {
-  padding-bottom: 4rem;
-}
-
-.fc .fc-daygrid-day-events {
-  display: none;
-}
-
 .booking-strip {
   position: absolute;
+  left: 0;
+  top: 2rem;
+  width: 100%;
   z-index: 6;
   height: 2rem;
   min-width: 0;
@@ -300,16 +283,17 @@ button.link-btn {
 }
 
 .booking-strip.starts-here {
+  left: 50%;
+  width: 50%;
+  z-index: 7;
   border-radius: 999px 0 0 999px;
 }
 
 .booking-strip.ends-here {
+  width: 50%;
   border-radius: 0 999px 999px 0;
 }
 
-.booking-strip.starts-here.ends-here {
-  border-radius: 999px;
-}
 .booking-strip:hover,
 .booking-strip:focus-visible {
   filter: brightness(0.92);
@@ -317,9 +301,6 @@ button.link-btn {
   outline-offset: 1px;
 }
 
-.fc-highlight {
-  background: rgba(79, 70, 229, 0.16) !important;
-}
 @media (prefers-color-scheme: dark) {
   :root {
     --ink: #e5e7eb;
@@ -359,7 +340,6 @@ button.link-btn {
 
   .modal input,
   .modal select,
-  .modal textarea,
   button.secondary,
   button.danger {
     background: #111827;
@@ -409,7 +389,6 @@ button.link-btn {
     outline-color: rgba(226, 232, 240, 0.34);
   }
 
-
   .fc .fc-daygrid-day.pending-between .fc-daygrid-day-frame {
     background: rgba(139, 156, 255, 0.16);
   }
@@ -419,7 +398,4 @@ button.link-btn {
     background: rgba(139, 156, 255, 0.34);
     box-shadow: inset 0 0 0 2px rgba(170, 182, 255, 0.72);
   }
-  .fc-highlight {
-    background: rgba(139, 156, 255, 0.2) !important;
-  }}
-
+}
