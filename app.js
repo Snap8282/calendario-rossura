@@ -297,6 +297,13 @@ function clearClickSelection() {
   renderClickSelection();
 }
 
+document.addEventListener("keydown", (event) => {
+  const bookingModalIsOpen = !el("booking-modal").classList.contains("hidden");
+  if (event.key === "Escape" && pendingCheckinDate && !bookingModalIsOpen) {
+    clearClickSelection();
+  }
+});
+
 function isSelectableCheckin(dateStr) {
   return !bookingsCache.some((b) => b.start_date <= dateStr && dateStr < b.end_date);
 }
