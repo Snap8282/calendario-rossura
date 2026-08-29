@@ -68,3 +68,6 @@ npx serve .
 - style.css: responsive light and dark styling
 - config.js: Supabase project URL and public key
 - supabase/schema.sql: tables, policies, and booking functions
+- vendor/: Supabase and FullCalendar, served from the repo rather than a
+  CDN so the app has no third-party runtime dependency. See vendor/README.md
+  before upgrading either library.

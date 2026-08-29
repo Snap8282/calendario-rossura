@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Calendario Casa Rossura</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/it.global.min.js"></script>
+  <!-- Librerie servite dal repo, non da una CDN: nessuna dipendenza esterna a
+       runtime e nessun aggiornamento a sorpresa. Vedi vendor/README.md. -->
+  <script src="vendor/supabase-2.112.4.min.js"></script>
+  <script src="vendor/fullcalendar-6.1.15.min.js"></script>
+  <script src="vendor/fullcalendar-locale-it-6.1.15.min.js"></script>
 </head>
 <body>
   <header class="topbar">
