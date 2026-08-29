@@ -1,0 +1,5 @@
+# Vendored libraries are byte-exact copies of published releases. Git must not
+# apply line-ending conversion to them: with core.autocrlf=true a fresh clone on
+# Windows would rewrite LF to CRLF, changing the bytes and breaking the SHA-256
+# hashes recorded in vendor/README.md.
+vendor/*.js -text
