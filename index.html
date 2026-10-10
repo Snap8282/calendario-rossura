@@ -19,7 +19,7 @@
     </div>
   </header>
 
-  <p id="error-banner" class="error-banner hidden"></p>
+  <p id="error-banner" class="error-banner hidden" role="alert"></p>
 
   <main>
     <!-- Accesso obbligatorio: il calendario resta nascosto finche non ci si identifica -->
@@ -67,13 +67,17 @@
       </div>
     </section>
 
+    <div id="calendar-controls" class="calendar-controls hidden">
+      <p id="booking-status" role="status" aria-live="polite"></p>
+      <button id="refresh-bookings" class="secondary" type="button">Aggiorna</button>
+    </div>
     <div id="calendar" class="hidden"></div>
   </main>
 
   <!-- Modale nuova prenotazione -->
-  <div id="booking-modal" class="modal-overlay hidden">
+  <div id="booking-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="booking-title">
     <div class="modal">
-      <h2>Nuova prenotazione</h2>
+      <h2 id="booking-title">Nuova prenotazione</h2>
       <label id="booking-member-label" class="hidden">
         Prenota per
         <select id="booking-member"></select>
@@ -90,7 +94,7 @@
         Nota (facoltativa)
         <input type="text" id="booking-note" placeholder="es. Vacanza estiva con i bambini" />
       </label>
-      <p id="booking-error" class="modal-error hidden"></p>
+      <p id="booking-error" class="modal-error hidden" role="alert"></p>
       <div class="modal-actions">
         <button id="booking-submit" class="primary">Prenota</button>
         <button id="booking-cancel" class="secondary">Annulla</button>
@@ -99,7 +103,7 @@
   </div>
 
   <!-- Modale visualizza / modifica / elimina prenotazione -->
-  <div id="event-modal" class="modal-overlay hidden">
+  <div id="event-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="event-title">
     <div class="modal">
       <h2 id="event-title">Prenotazione</h2>
       <p id="event-dates" class="hint"></p>
@@ -120,7 +124,7 @@
         </label>
       </div>
 
-      <p id="event-error" class="modal-error hidden"></p>
+      <p id="event-error" class="modal-error hidden" role="alert"></p>
       <div class="modal-actions">
         <button id="event-edit-btn" class="secondary hidden">Modifica</button>
         <button id="event-save-btn" class="primary hidden">Salva modifiche</button>

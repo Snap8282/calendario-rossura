@@ -19,8 +19,85 @@ let identity = null; // {name, pin} while this page is open
 let calendar = null;
 let bookingsCache = []; // ultime prenotazioni caricate, per il controllo di sovrapposizione lato client
 let pendingCheckinDate = null;
+let sessionVersion = 0;
+let bookingLoadVersion = 0;
+let bookingLoadController = null;
+let bookingsReady = false;
+let visibleRange = null;
+let refreshTimer = null;
+let modalVersion = 0;
+const busyActions = new Map();
+const ACTION_CONTROLS = {
+  login: ['gate-name', 'gate-password', 'gate-new-password-input', 'gate-new-password-confirm', 'gate-submit', 'gate-set-password-submit'],
+  booking: ['booking-start', 'booking-end', 'booking-note', 'booking-member', 'booking-submit', 'booking-cancel'],
+  event: ['event-edit-start', 'event-edit-end', 'event-edit-note', 'event-edit-btn', 'event-save-btn', 'event-delete-btn', 'event-close-btn'],
+};
 
 const el = (id) => document.getElementById(id);
+const dialogFocus = new Map();
+
+async function requestRpc(name, args) {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await sb.rpc(name, args).abortSignal(controller.signal);
+    if (controller.signal.aborted) throw new Error('Richiesta interrotta. Verifica le prenotazioni con Aggiorna prima di riprovare.');
+    return response;
+  } finally { clearTimeout(deadline); }
+}
+
+function showDialog(id, focusId) {
+  dialogFocus.set(id, document.activeElement);
+  el(id).classList.remove('hidden');
+  el(focusId).focus();
+}
+
+function hideDialog(id) {
+  const wasOpen = !el(id).classList.contains('hidden');
+  el(id).classList.add('hidden');
+  const previous = dialogFocus.get(id);
+  dialogFocus.delete(id);
+  if (wasOpen && previous && previous.isConnected) previous.focus();
+}
+
+async function runAction(group, errorId, action) {
+  if (busyActions.has(group)) return;
+  const token = {};
+  const session = sessionVersion;
+  const dialog = modalVersion;
+  const isCurrent = () => session === sessionVersion && (group === 'login' || dialog === modalVersion);
+  busyActions.set(group, token);
+  ACTION_CONTROLS[group].forEach(id => { el(id).disabled = true; });
+  hideModalError(errorId);
+  try {
+    await action(isCurrent);
+  } catch (error) {
+    if (isCurrent()) showModalError(errorId, error.message || 'Impossibile connettersi. Riprova.');
+  } finally {
+    if (busyActions.get(group) === token) {
+      busyActions.delete(group);
+      ACTION_CONTROLS[group].forEach(id => { el(id).disabled = false; });
+    }
+  }
+}
+
+function setBookingStatus(message, ready = false) {
+  bookingsReady = ready;
+  el('booking-status').textContent = message;
+  el('calendar-controls').classList.toggle('hidden', !identity);
+}
+
+function refreshBookings() {
+  if (!identity || !calendar || bookingLoadController || document.visibilityState === 'hidden' || busyActions.has('booking') || busyActions.has('event') ||
+      !el('booking-modal').classList.contains('hidden') || !el('event-modal').classList.contains('hidden')) return;
+  return loadBookings();
+}
+
+el('refresh-bookings').addEventListener('click', () => loadBookings());
+window.addEventListener('focus', refreshBookings);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshBookings();
+});
 
 function currentMember() {
   if (!identity) return null;
@@ -105,6 +182,9 @@ function resetLogin() {
 }
 
 gateName.addEventListener("change", () => {
+  gatePassword.value = '';
+  gateNewPasswordInput.value = '';
+  gateNewPasswordConfirm.value = '';
   const member = membersById[gateName.value];
   hideModalError("gate-error");
   hideModalError("gate-set-password-error");
@@ -119,15 +199,18 @@ el("gate-submit").addEventListener("click", async () => {
   if (!member) return showModalError("gate-error", "Scegli prima il tuo nome.");
   if (!pin) return showModalError("gate-error", "Inserisci la password.");
 
-  const { data: ok, error } = await sb.rpc("verify_pin", {
-    p_member_name: member.name,
-    p_pin: pin,
-  });
-  if (error) return showModalError("gate-error", error.message);
-  if (!ok) return showModalError("gate-error", "Password errata.");
+  await runAction('login', 'gate-error', async isCurrent => {
+    const { data: ok, error } = await requestRpc("verify_pin", {
+      p_member_name: member.name,
+      p_pin: pin,
+    });
+    if (!isCurrent()) return;
+    if (error) return showModalError("gate-error", error.message);
+    if (!ok) return showModalError("gate-error", "Password errata.");
 
-  identity = { name: member.name, pin };
-  enterApp();
+    identity = { name: member.name, pin };
+    enterApp();
+  });
 });
 
 el("gate-set-password-submit").addEventListener("click", async () => {
@@ -138,31 +221,57 @@ el("gate-set-password-submit").addEventListener("click", async () => {
   if (pin.length < 4) return showModalError("gate-set-password-error", "La password deve avere almeno 4 caratteri.");
   if (pin !== confirmation) return showModalError("gate-set-password-error", "Le password non coincidono.");
 
-  const { error } = await sb.rpc("set_pin", {
-    p_member_name: member.name,
-    p_pin: pin,
-  });
-  if (error) return showModalError("gate-set-password-error", error.message);
+  await runAction('login', 'gate-set-password-error', async isCurrent => {
+    const { error } = await requestRpc("set_pin", {
+      p_member_name: member.name,
+      p_pin: pin,
+    });
+    if (!isCurrent()) return;
+    if (error) return showModalError("gate-set-password-error", error.message);
 
-  member.has_pin = true;
-  identity = { name: member.name, pin };
-  enterApp();
+    member.has_pin = true;
+    identity = { name: member.name, pin };
+    enterApp();
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Gate di accesso / logout
 // ---------------------------------------------------------------------------
 function enterApp() {
+  sessionVersion++;
+  bookingLoadVersion++;
+  bookingsCache = [];
+  bookingsReady = false;
+  gatePassword.value = '';
+  gateNewPasswordInput.value = '';
+  gateNewPasswordConfirm.value = '';
   el("login-gate").classList.add("hidden");
   el("calendar-hero").classList.remove("hidden");
   el("calendar").classList.remove("hidden");
   renderIdentityBar();
   if (calendar) calendar.destroy();
   initCalendar();
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(refreshBookings, 60000);
 }
 
 function logout() {
+  sessionVersion++;
+  bookingLoadVersion++;
+  if (bookingLoadController) bookingLoadController.abort();
+  bookingLoadController = null;
   identity = null;
+  bookingsCache = [];
+  bookingsReady = false;
+  visibleRange = null;
+  clearInterval(refreshTimer);
+  refreshTimer = null;
+  closeBookingModal();
+  closeBookingDetails();
+  for (const group of busyActions.keys()) ACTION_CONTROLS[group].forEach(id => { el(id).disabled = false; });
+  busyActions.clear();
+  el('calendar-controls').classList.add('hidden');
   pendingCheckinDate = null;
   if (calendar) {
     calendar.destroy();
@@ -208,14 +317,52 @@ async function loadMembers() {
 // ---------------------------------------------------------------------------
 
 async function loadBookings() {
-  const { data, error } = await sb.from("bookings").select("id, member_id, start_date, end_date, note");
-  if (error) {
-    showError("Impossibile caricare le prenotazioni: " + error.message);
-    return;
+  if (!identity || !calendar || !visibleRange) return false;
+  const session = sessionVersion;
+  const request = ++bookingLoadVersion;
+  if (bookingLoadController) bookingLoadController.abort();
+  const controller = new AbortController();
+  bookingLoadController = controller;
+  const deadline = setTimeout(() => controller.abort(), 20000);
+  const range = {...visibleRange};
+  const current = () => session === sessionVersion && request === bookingLoadVersion;
+  setBookingStatus('Aggiornamento prenotazioni…');
+  el('refresh-bookings').disabled = true;
+  try {
+    const rows = [];
+    // Always read until an empty page, even if the server's row cap is below 500.
+    // Offset advances by actual returned rows rather than the requested page size.
+    let offset = 0;
+    while (true) {
+      const {data, error} = await sb.from('bookings')
+        .select('id, member_id, start_date, end_date, note')
+        .lte('start_date', range.end).gte('end_date', range.start)
+        .order('id').abortSignal(controller.signal).range(offset, offset + 499);
+      if (!current()) return false;
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error('Risposta non valida.');
+      if (!data.length) break;
+      rows.push(...data);
+      offset += data.length;
+    }
+    // Publish a complete result only; failed pagination never replaces the cache.
+    bookingsCache = [...new Map(rows.map(row => [row.id, row])).values()];
+    renderBookingFragments();
+    setBookingStatus('Prenotazioni aggiornate alle ' + new Date().toLocaleTimeString('it-CH', {hour: '2-digit', minute: '2-digit'}), true);
+    return true;
+  } catch (error) {
+    if (current()) {
+      clearClickSelection();
+      setBookingStatus('Impossibile aggiornare le prenotazioni. I dati possono essere incompleti o non aggiornati. Premi Aggiorna per riprovare.');
+    }
+    return false;
+  } finally {
+    clearTimeout(deadline);
+    if (current()) {
+      bookingLoadController = null;
+      el('refresh-bookings').disabled = false;
+    }
   }
-
-  bookingsCache = data;
-  renderBookingFragments();
 }
 
 function bookingsForDate(dateStr) {
@@ -298,9 +445,26 @@ function clearClickSelection() {
 }
 
 document.addEventListener("keydown", (event) => {
-  const bookingModalIsOpen = !el("booking-modal").classList.contains("hidden");
-  if (event.key === "Escape" && pendingCheckinDate && !bookingModalIsOpen) {
-    clearClickSelection();
+  const bookingOpen = !el('booking-modal').classList.contains('hidden');
+  const eventOpen = !el('event-modal').classList.contains('hidden');
+  if (event.key === 'Escape') {
+    if (bookingOpen && !busyActions.has('booking')) closeBookingModal();
+    else if (eventOpen && !busyActions.has('event')) closeBookingDetails();
+    else if (!bookingOpen && !eventOpen) clearClickSelection();
+  }
+  if (event.key === 'Tab' && (bookingOpen || eventOpen)) {
+    const dialog = el(bookingOpen ? 'booking-modal' : 'event-modal');
+    const focusable = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')].filter(node => node.offsetParent !== null);
+    if (!focusable.length) { event.preventDefault(); return; }
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+  }
+  if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+    event.preventDefault();
+    if (!identity) el(gateNewPassword.classList.contains('hidden') ? 'gate-submit' : 'gate-set-password-submit').click();
+    else if (bookingOpen) el('booking-submit').click();
+    else if (eventOpen && !el('event-edit-fields').classList.contains('hidden')) el('event-save-btn').click();
   }
 });
 
@@ -325,6 +489,10 @@ function validateBookingDates(start, end, errorId) {
 }
 
 function onDateClick(info) {
+  if (!identity || !bookingsReady) {
+    showError('Attendi un aggiornamento riuscito delle prenotazioni prima di scegliere le date.');
+    return;
+  }
   const clickedDate = info.dateStr.slice(0, 10);
 
   if (!pendingCheckinDate) {
@@ -378,10 +546,14 @@ function initCalendar() {
     },
     dateClick: onDateClick,
     dayCellDidMount: mountBookingCell,
-    datesSet: clearClickSelection,
+    datesSet: info => {
+      clearClickSelection();
+      // Calendar date strings preserve the user's local calendar dates (no UTC conversion).
+      visibleRange = {start: info.startStr.slice(0, 10), end: info.endStr.slice(0, 10)};
+      loadBookings();
+    },
   });
   calendar.render();
-  loadBookings();
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +561,8 @@ function initCalendar() {
 // ---------------------------------------------------------------------------
 
 function openBookingModal(startStr, endStr) {
+  if (!identity || !bookingsReady) return;
+  modalVersion++;
   const me = currentMember();
   hideModalError("booking-error");
   el("booking-note").value = "";
@@ -396,18 +570,19 @@ function openBookingModal(startStr, endStr) {
   el("booking-end").value = endStr.slice(0, 10);
   el("booking-member-label").classList.toggle("hidden", !(me && me.is_admin));
   if (me && me.is_admin) populateMemberSelect(el("booking-member"), me.id);
-  el("booking-modal").classList.remove("hidden");
+  showDialog('booking-modal', 'booking-start');
 }
 
 function closeBookingModal() {
-  el("booking-modal").classList.add("hidden");
+  modalVersion++;
+  hideDialog('booking-modal');
   clearClickSelection();
 }
 
 el("booking-cancel").addEventListener("click", closeBookingModal);
 
 el("booking-submit").addEventListener("click", async () => {
-  if (!identity) return;
+  if (!identity || !bookingsReady) return;
   const start = el("booking-start").value;
   const end = el("booking-end").value;
   const note = el("booking-note").value.trim();
@@ -435,12 +610,15 @@ el("booking-submit").addEventListener("click", async () => {
         p_note: note || null,
       };
 
-  const { error } = await sb.rpc(rpcName, rpcArgs);
+  await runAction('booking', 'booking-error', async isCurrent => {
+    const { error } = await requestRpc(rpcName, rpcArgs);
+    if (!isCurrent()) return;
 
-  if (error) return showModalError("booking-error", error.message);
+    if (error) return showModalError("booking-error", error.message);
 
-  closeBookingModal();
-  await loadBookings();
+    closeBookingModal();
+    await loadBookings();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -450,6 +628,8 @@ el("booking-submit").addEventListener("click", async () => {
 let openEventId = null;
 
 function openBookingDetails(booking) {
+  if (!identity) return;
+  modalVersion++;
   clearClickSelection();
   openEventId = booking.id;
   hideModalError("event-error");
@@ -473,13 +653,15 @@ function openBookingDetails(booking) {
   el("event-delete-btn").classList.toggle("hidden", !canManage);
   el("event-save-btn").classList.add("hidden");
 
-  el("event-modal").classList.remove("hidden");
+  showDialog('event-modal', 'event-close-btn');
 }
 
-el("event-close-btn").addEventListener("click", () => {
-  el("event-modal").classList.add("hidden");
+function closeBookingDetails() {
+  modalVersion++;
+  hideDialog('event-modal');
   openEventId = null;
-});
+}
+el("event-close-btn").addEventListener("click", closeBookingDetails);
 
 el("event-edit-btn").addEventListener("click", () => {
   el("event-edit-fields").classList.remove("hidden");
@@ -492,35 +674,39 @@ el("event-save-btn").addEventListener("click", async () => {
   const start = el("event-edit-start").value;
   const end = el("event-edit-end").value;
   if (!validateBookingDates(start, end, "event-error")) return;
-  const { error } = await sb.rpc("update_booking", {
-    p_booking_id: openEventId,
-    p_member_name: identity.name,
-    p_pin: identity.pin,
-    p_start: start,
-    p_end: end,
-    p_note: el("event-edit-note").value.trim() || null,
-  });
-  if (error) return showModalError("event-error", error.message);
+  await runAction('event', 'event-error', async isCurrent => {
+    const { error } = await requestRpc("update_booking", {
+      p_booking_id: openEventId,
+      p_member_name: identity.name,
+      p_pin: identity.pin,
+      p_start: start,
+      p_end: end,
+      p_note: el("event-edit-note").value.trim() || null,
+    });
+    if (!isCurrent()) return;
+    if (error) return showModalError("event-error", error.message);
 
-  el("event-modal").classList.add("hidden");
-  openEventId = null;
-  await loadBookings();
+    closeBookingDetails();
+    await loadBookings();
+  });
 });
 
 el("event-delete-btn").addEventListener("click", async () => {
   if (!openEventId || !identity) return;
   if (!confirm("Eliminare questa prenotazione?")) return;
 
-  const { error } = await sb.rpc("delete_booking", {
-    p_booking_id: openEventId,
-    p_member_name: identity.name,
-    p_pin: identity.pin,
-  });
-  if (error) return showModalError("event-error", error.message);
+  await runAction('event', 'event-error', async isCurrent => {
+    const { error } = await requestRpc("delete_booking", {
+      p_booking_id: openEventId,
+      p_member_name: identity.name,
+      p_pin: identity.pin,
+    });
+    if (!isCurrent()) return;
+    if (error) return showModalError("event-error", error.message);
 
-  el("event-modal").classList.add("hidden");
-  openEventId = null;
-  await loadBookings();
+    closeBookingDetails();
+    await loadBookings();
+  });
 });
 
 // ---------------------------------------------------------------------------

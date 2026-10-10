@@ -28,7 +28,8 @@ defined in supabase/schema.sql.
 
 1. Create a Supabase project.
 2. Run supabase/schema.sql in the Supabase SQL Editor.
-3. Add or update the family members in the public.members table.
+3. Run supabase/seed.sql, or add family members in public.members. Set the Admin
+   password privately before sharing the app URL.
 4. Copy the Supabase project URL and anon key into config.js.
 5. Publish the repository with GitHub Pages.
 
@@ -68,6 +69,27 @@ npx serve .
 - style.css: responsive light and dark styling
 - config.js: Supabase project URL and public key
 - supabase/schema.sql: tables, policies, and booking functions
+- supabase/seed.sql: initial family names, separate from database definitions
+- supabase/migrations/: changes for an already-running project
+- backup/: daily Drive backup and restore-file generator
+- tests/ and e2e/: automated domain, database, backup, and browser checks
 - vendor/: Supabase and FullCalendar, served from the repo rather than a
   CDN so the app has no third-party runtime dependency. See vendor/README.md
   before upgrading either library.
+
+## Updating an existing project
+
+See [CHANGES.md](CHANGES.md) for the security migration and rollout sequence.
+Do not rerun seed.sql on a restore. The security migration preserves existing
+member IDs, password hashes, admin flags and bookings.
+
+## Refresh and testing
+
+Booking data loads for the displayed calendar range, with pagination. A persistent
+status shows loading or failure; date selection is blocked until a complete load
+succeeds. Use Aggiorna to refresh, or return to the browser tab. While visible,
+the calendar refreshes every minute, except during an open booking dialog/action.
+The database remains the final authority for overlapping reservations.
+
+See [tests/README.md](tests/README.md) for automated checks. Development tooling
+does not add a build step or runtime dependency to the deployed static site.

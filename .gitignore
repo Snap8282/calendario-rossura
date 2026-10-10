@@ -1,0 +1,7 @@
+node_modules/
+playwright-report/
+test-results/
+# Database exports contain password hashes; keep them out of source control.
+backup/backup_folder/
+backup/restore*.sql
+restore*.sql

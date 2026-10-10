@@ -1,8 +1,8 @@
-﻿-- Family Home Booking Webapp - database schema
--- Run this once in your Supabase project's SQL editor (Project > SQL Editor > New query).
+-- Family Home Booking Webapp - database schema
+-- Fresh setup: run this, then seed.sql. Existing projects: use migrations/ instead.
 --
 -- Security model: this app does NOT use Supabase Auth / real accounts. There is
--- no sensitive data here, so the goal is a "spreadsheet lock", not real security:
+-- the goal is a convenience lock rather than a full authentication system:
 -- each family member picks their name and a password. All writes go through
 -- the RPC functions below (SECURITY DEFINER), which check the password server-side
 -- before touching the tables. The tables themselves grant no direct INSERT/
@@ -44,7 +44,7 @@ create or replace view public.members_public as
   from public.members;
 
 -- ---------------------------------------------------------------------------
--- Row Level Security: read-only for everyone, no direct writes.
+-- Row Level Security: public bookings reads; members only through the safe view.
 -- All writes must go through the RPC functions below.
 -- ---------------------------------------------------------------------------
 
@@ -52,9 +52,6 @@ alter table public.members enable row level security;
 alter table public.bookings enable row level security;
 
 drop policy if exists "members readable by everyone" on public.members;
-create policy "members readable by everyone"
-  on public.members for select
-  using (true);
 
 drop policy if exists "bookings readable by everyone" on public.bookings;
 create policy "bookings readable by everyone"
@@ -72,24 +69,27 @@ create or replace function public.set_pin(p_member_name text, p_pin text)
 returns void
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_member members;
 begin
-  if length(p_pin) < 4 then
+  if p_pin is null or length(btrim(p_pin)) < 4 then
     raise exception 'Password must be at least 4 characters';
   end if;
-
-  select * into v_member from members where name = p_member_name;
-  if v_member.id is null then
+  if octet_length(p_pin) > 72 then
+    raise exception 'Password must be at most 72 UTF-8 bytes';
+  end if;
+  -- Conditional UPDATE is atomic, including concurrent first-use requests.
+  update public.members set pin_hash = crypt(p_pin, gen_salt('bf'))
+    where name = p_member_name and pin_hash is null
+    returning * into v_member;
+  if not found then
+    if exists (select 1 from public.members where name = p_member_name) then
+      raise exception 'A password is already set for % - ask an admin to reset it', p_member_name;
+    end if;
     raise exception 'Unknown family member: %', p_member_name;
   end if;
-  if v_member.pin_hash is not null then
-    raise exception 'A password is already set for % - ask an admin to reset it', p_member_name;
-  end if;
-
-  update members set pin_hash = crypt(p_pin, gen_salt('bf')) where id = v_member.id;
 end;
 $$;
 
@@ -99,14 +99,14 @@ create or replace function public.verify_pin(p_member_name text, p_pin text)
 returns boolean
 language sql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
-  select exists (
+  select case when p_pin is null or p_pin = '' or octet_length(p_pin) > 72 then false else exists (
     select 1 from members
     where name = p_member_name
       and pin_hash is not null
       and pin_hash = crypt(p_pin, pin_hash)
-  );
+  ) end;
 $$;
 
 create or replace function public.add_booking(
@@ -118,7 +118,7 @@ create or replace function public.add_booking(
 ) returns bookings
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_member members;
@@ -131,7 +131,10 @@ begin
   if v_member.pin_hash is null then
     raise exception 'No password set yet for % - set one first', p_member_name;
   end if;
-  if v_member.pin_hash <> crypt(p_pin, v_member.pin_hash) then
+  if p_pin is null or p_pin = '' or octet_length(p_pin) > 72 then
+    raise exception 'Incorrect password for %', p_member_name;
+  end if;
+  if v_member.pin_hash is distinct from crypt(p_pin, v_member.pin_hash) then
     raise exception 'Incorrect password for %', p_member_name;
   end if;
 
@@ -159,7 +162,7 @@ create or replace function public.add_booking_for_member(
 ) returns bookings
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_actor members;
@@ -170,7 +173,10 @@ begin
   if v_actor.id is null then
     raise exception 'Unknown family member: %', p_actor_member_name;
   end if;
-  if v_actor.pin_hash is null or v_actor.pin_hash <> crypt(p_pin, v_actor.pin_hash) then
+  if p_pin is null or p_pin = '' or octet_length(p_pin) > 72 then
+    raise exception 'Incorrect password for %', p_actor_member_name;
+  end if;
+  if v_actor.pin_hash is null or v_actor.pin_hash is distinct from crypt(p_pin, v_actor.pin_hash) then
     raise exception 'Incorrect password for %', p_actor_member_name;
   end if;
   if not v_actor.is_admin then
@@ -204,7 +210,7 @@ create or replace function public.update_booking(
 ) returns bookings
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_member members;
@@ -215,11 +221,14 @@ begin
   if v_member.id is null then
     raise exception 'Unknown family member: %', p_member_name;
   end if;
-  if v_member.pin_hash is null or v_member.pin_hash <> crypt(p_pin, v_member.pin_hash) then
+  if p_pin is null or p_pin = '' or octet_length(p_pin) > 72 then
+    raise exception 'Incorrect password for %', p_member_name;
+  end if;
+  if v_member.pin_hash is null or v_member.pin_hash is distinct from crypt(p_pin, v_member.pin_hash) then
     raise exception 'Incorrect password for %', p_member_name;
   end if;
 
-  select * into v_existing from bookings where id = p_booking_id;
+  select * into v_existing from bookings where id = p_booking_id for update;
   if v_existing.id is null then
     raise exception 'Booking not found';
   end if;
@@ -248,7 +257,7 @@ create or replace function public.delete_booking(
 ) returns void
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = pg_catalog, public, extensions, pg_temp
 as $$
 declare
   v_member members;
@@ -258,11 +267,14 @@ begin
   if v_member.id is null then
     raise exception 'Unknown family member: %', p_member_name;
   end if;
-  if v_member.pin_hash is null or v_member.pin_hash <> crypt(p_pin, v_member.pin_hash) then
+  if p_pin is null or p_pin = '' or octet_length(p_pin) > 72 then
+    raise exception 'Incorrect password for %', p_member_name;
+  end if;
+  if v_member.pin_hash is null or v_member.pin_hash is distinct from crypt(p_pin, v_member.pin_hash) then
     raise exception 'Incorrect password for %', p_member_name;
   end if;
 
-  select * into v_existing from bookings where id = p_booking_id;
+  select * into v_existing from bookings where id = p_booking_id for update;
   if v_existing.id is null then
     raise exception 'Booking not found';
   end if;
@@ -279,7 +291,28 @@ $$;
 -- and call the RPC functions. It gets no direct table write access.
 -- ---------------------------------------------------------------------------
 
-grant usage on schema public to anon, authenticated;
+-- REVOKE explicitly: GRANT SELECT does not remove inherited write/hash access.
+revoke create on schema public from public, anon, authenticated;
+revoke all on public.members, public.bookings, public.members_public from public, anon, authenticated;
+-- Table-level REVOKE does not remove pre-existing column-level grants.
+do $$
+declare c record;
+begin
+  for c in
+    select attrelid::regclass as relation, attname
+    from pg_attribute where attrelid in ('public.members'::regclass, 'public.bookings'::regclass)
+      and attnum > 0 and not attisdropped
+  loop
+    execute format('revoke select (%1$I), insert (%1$I), update (%1$I), references (%1$I) on %2$s from public, anon, authenticated', c.attname, c.relation);
+  end loop;
+end $$;
+revoke execute on function public.set_pin(text, text), public.verify_pin(text, text),
+  public.add_booking(text, text, date, date, text),
+  public.add_booking_for_member(text, text, text, date, date, text),
+  public.update_booking(uuid, text, text, date, date, text),
+  public.delete_booking(uuid, text, text) from public;
+grant usage on schema public to anon, authenticated, service_role;
+grant select on public.members, public.bookings to service_role;
 grant select on public.members_public to anon, authenticated;
 grant select on public.bookings to anon, authenticated;
 grant execute on function public.set_pin(text, text) to anon, authenticated;
@@ -288,24 +321,3 @@ grant execute on function public.add_booking(text, text, date, date, text) to an
 grant execute on function public.add_booking_for_member(text, text, text, date, date, text) to anon, authenticated;
 grant execute on function public.update_booking(uuid, text, text, date, date, text) to anon, authenticated;
 grant execute on function public.delete_booking(uuid, text, text) to anon, authenticated;
-
--- ---------------------------------------------------------------------------
--- Seed your family members here. Run this after the statements above.
--- Everyone starts with no password set - they set their own via the app on first use.
--- ---------------------------------------------------------------------------
-
-insert into public.members (name, is_admin) values
-   ('Admin', true),
-   ('Angela', false),
-   ('Gaia', false),
-   ('Marta', false),
-   ('Monica', false),
-   ('Mattia', false),
-   ('Nora', false),
-   ('Chiara', false),
-   ('Michele', false),
-   ('Simone', false),
-   ('Cecilia', false),
-   ('Paola', false),
-   ('Milo', false);
-

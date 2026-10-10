@@ -1,0 +1,15 @@
+{
+  "name": "rossura-booking-checks",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "test:unit": "node --test tests/app.test.cjs tests/backup.test.cjs",
+    "test:db": "node --test tests/database.test.cjs tests/migration.test.cjs",
+    "test:e2e": "playwright test",
+    "audit:live": "node tests/audit-live.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@playwright/test": "1.56.1"
+  }
+}
