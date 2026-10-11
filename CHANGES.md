@@ -35,7 +35,8 @@ Branch: `fix/security-and-reliability`.
 - `members_public` now uses `security_invoker`, respecting caller permissions and
   member RLS. A generated `has_pin` boolean permits a four-column read allowlist
   without allowing password-hash reads. The existing frontend response is unchanged.
-- Reservation details show check-in and check-out on separate labelled lines.
+- Reservation details show check-in and check-out on separate labelled lines,
+  using Swiss date format (`dd.mm.yyyy`).
   Notes appear without a prefix only when present. Admin accounts remain selectable
   after the alphabetical family list in both member selectors, without account renames.
 

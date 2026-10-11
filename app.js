@@ -120,6 +120,11 @@ function capitalizeFirst(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
+function formatSwissDate(value) {
+  const [year, month, day] = value.split("-");
+  return `${day}.${month}.${year}`;
+}
+
 function showError(message) {
   const banner = el("error-banner");
   banner.textContent = message;
@@ -640,7 +645,7 @@ function openBookingDetails(booking) {
   const end = booking.end_date;
 
   el("event-title").textContent = member ? member.name : "Sconosciuto";
-  el("event-dates").textContent = `Check-in: ${start}\nCheck-out: ${end}`;
+  el("event-dates").textContent = `Check-in: ${formatSwissDate(start)}\nCheck-out: ${formatSwissDate(end)}`;
   const note = (booking.note || "").trim();
   el("event-note").textContent = note;
   el("event-note").classList.toggle("hidden", !note);

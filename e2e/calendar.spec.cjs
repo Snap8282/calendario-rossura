@@ -90,7 +90,7 @@ test('admin creates on behalf of another member', async ({page}) => {
 });
 test('owner edits and deletes a reservation', async ({page}) => {
   await login(page); await page.locator('.booking-strip.starts-here').click();
-  expect(await page.locator('#event-dates').innerText()).toBe('Check-in: 2026-10-10\nCheck-out: 2026-10-12');
+  expect(await page.locator('#event-dates').innerText()).toBe('Check-in: 10.10.2026\nCheck-out: 12.10.2026');
   await expect(page.locator('#event-note')).toHaveText('Original note');
   await page.locator('#event-edit-btn').click(); await page.locator('#event-edit-note').fill('Updated note');
   await page.locator('#event-save-btn').click(); await expect(page.locator('#event-modal')).toBeHidden();
