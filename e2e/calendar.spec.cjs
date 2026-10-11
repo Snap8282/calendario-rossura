@@ -80,7 +80,9 @@ test('checkout day is available; occupied night is rejected', async ({page}) => 
   await expect(page.locator('#booking-start')).toHaveValue('2026-10-12');
 });
 test('admin creates on behalf of another member', async ({page}) => {
+  await expect(page.locator('#gate-name option').last()).toHaveText('Admin');
   await login(page,'admin'); await selectDates(page); await page.locator('#booking-member').selectOption('bob');
+  await expect(page.locator('#booking-member option').last()).toHaveText('Admin');
   const call=page.waitForRequest(r=>r.url().endsWith('/rpc/add_booking_for_member'));
   await page.locator('#booking-submit').click();
   expect((await call).postDataJSON().p_target_member_name).toBe('Bob');
@@ -88,9 +90,15 @@ test('admin creates on behalf of another member', async ({page}) => {
 });
 test('owner edits and deletes a reservation', async ({page}) => {
   await login(page); await page.locator('.booking-strip.starts-here').click();
+  expect(await page.locator('#event-dates').innerText()).toBe('Check-in: 2026-10-10\nCheck-out: 2026-10-12');
+  await expect(page.locator('#event-note')).toHaveText('Original note');
   await page.locator('#event-edit-btn').click(); await page.locator('#event-edit-note').fill('Updated note');
   await page.locator('#event-save-btn').click(); await expect(page.locator('#event-modal')).toBeHidden();
-  await page.locator('.booking-strip.starts-here').click(); await expect(page.locator('#event-note')).toHaveText('Nota: Updated note');
+  await page.locator('.booking-strip.starts-here').click(); await expect(page.locator('#event-note')).toHaveText('Updated note');
+  await page.locator('#event-edit-btn').click(); await page.locator('#event-edit-note').fill('');
+  await page.locator('#event-save-btn').click(); await expect(page.locator('#event-modal')).toBeHidden();
+  await page.locator('.booking-strip.starts-here').click(); await expect(page.locator('#event-note')).toBeHidden();
+  await expect(page.locator('#event-note')).toHaveText('');
   page.once('dialog',dialog=>dialog.accept()); await page.locator('#event-delete-btn').click();
   await expect(page.locator('.booking-strip')).toHaveCount(0);
 });

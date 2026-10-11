@@ -188,6 +188,10 @@ button.link-btn {
   font-size: 0.85rem;
 }
 
+#event-dates {
+  white-space: pre-line;
+}
+
 .modal-error {
   color: var(--danger);
   font-size: 0.85rem;

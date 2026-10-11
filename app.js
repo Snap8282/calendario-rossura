@@ -307,7 +307,8 @@ async function loadMembers() {
     el("login-gate").innerHTML = '<p class="hint">Impossibile connettersi - controlla config.js</p>';
     return false;
   }
-  members = data;
+  // Keep the server's alphabetical order, with admin accounts after family members.
+  members = [...data].sort((a, b) => Number(a.is_admin) - Number(b.is_admin));
   membersById = Object.fromEntries(members.map((m) => [m.id, m]));
   return true;
 }
@@ -639,8 +640,10 @@ function openBookingDetails(booking) {
   const end = booking.end_date;
 
   el("event-title").textContent = member ? member.name : "Sconosciuto";
-  el("event-dates").textContent = `${start} -> ${end} (giorno di check-out)`;
-  el("event-note").textContent = booking.note ? `Nota: ${booking.note}` : "Nessuna nota.";
+  el("event-dates").textContent = `Check-in: ${start}\nCheck-out: ${end}`;
+  const note = (booking.note || "").trim();
+  el("event-note").textContent = note;
+  el("event-note").classList.toggle("hidden", !note);
 
   el("event-edit-fields").classList.add("hidden");
   el("event-edit-start").value = start;
