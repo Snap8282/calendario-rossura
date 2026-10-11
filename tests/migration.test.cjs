@@ -11,6 +11,11 @@ test('migration closes inherited table/column grants, preserves records, and can
     await db.exec('create role anon; create role authenticated; create role service_role bypassrls; create schema extensions; grant usage on schema extensions to public;');
     await db.exec(fs.readFileSync('supabase/schema.sql','utf8').replace(/^\uFEFF/,''));
     await db.exec(fs.readFileSync('supabase/backup.sql','utf8').replace(/^\uFEFF/,''));
+    // Reproduce the deployed pre-fix view/table rather than starting with the fix.
+    await db.exec(`create or replace view public.members_public with (security_invoker=false) as
+      select id,name,is_admin,(pin_hash is not null) as has_pin from public.members;
+      alter table public.members drop column has_pin;
+      drop policy "members safe fields readable" on public.members;`);
     await db.exec(`insert into public.members(name,is_admin) values ('Alice',false);
       select public.set_pin('Alice','5678');
       select public.add_booking('Alice','5678','2026-10-10','2026-10-12','Retain me');
@@ -19,14 +24,22 @@ test('migration closes inherited table/column grants, preserves records, and can
       create policy "members readable by everyone" on public.members for select using (true);`);
     const before=(await db.query('select public.export_booking_backup() as data')).rows[0].data;
     const migration=fs.readFileSync('supabase/migrations/202610100001_security_hardening.sql','utf8');
+    const viewMigration=fs.readFileSync('supabase/migrations/202610110001_members_view_security.sql','utf8');
     await db.exec(migration);
+    await db.exec(viewMigration);
     await db.exec(migration);
+    await db.exec(viewMigration);
     const after=(await db.query('select public.export_booking_backup() as data')).rows[0].data;
-    assert.deepEqual(after.tables,before.tables);
+    const originalFields = snapshot => ({...snapshot.tables,
+      members:snapshot.tables.members.map(({has_pin,...member})=>member)});
+    assert.deepEqual(originalFields(after),before.tables);
+    assert.ok((await db.query("select reloptions from pg_class where oid='public.members_public'::regclass")).rows[0].reloptions.includes('security_invoker=true'));
     for (const role of ['anon','authenticated']) {
       await db.exec('set role '+role);
       assert.equal((await db.query('select * from public.members_public')).rows.length,1);
       await assert.rejects(db.query('select pin_hash from public.members'), /permission denied/);
+      await assert.rejects(db.query('select * from public.members'), /permission denied/);
+      assert.equal((await db.query('select id,name,is_admin,has_pin from public.members')).rows.length,1);
       await assert.rejects(db.query('update public.members set pin_hash=null'), /permission denied/);
       await assert.rejects(db.query('truncate public.bookings'), /permission denied/);
       await assert.rejects(db.query("select public.add_booking('Alice',null,'2026-11-01','2026-11-03',null)"), /Incorrect password/);
@@ -38,11 +51,20 @@ test('migration closes inherited table/column grants, preserves records, and can
     const restore=buildRestore(after);
     await assert.rejects(db.exec(restore), /requires empty/);
     await db.exec('rollback');
-    assert.deepEqual((await db.query('select public.export_booking_backup() as data')).rows[0].data.tables,before.tables);
+    assert.deepEqual(originalFields((await db.query('select public.export_booking_backup() as data')).rows[0].data),before.tables);
     await db.exec('truncate public.members, public.bookings');
     await db.exec(restore);
     const restored=(await db.query('select public.export_booking_backup() as data')).rows[0].data;
     assert.deepEqual(restored.tables,after.tables);
     assert.equal((await db.query("select public.verify_pin('Alice','5678') as ok")).rows[0].ok,true);
+    // An unrelated existing column must cause an atomic refusal, not silently weaken the flag.
+    await db.exec(`create or replace view public.members_public with (security_invoker=false) as
+      select id,name,is_admin,(pin_hash is not null) as has_pin from public.members;
+      alter table public.members drop column has_pin;
+      alter table public.members add column has_pin boolean default false;`);
+    await assert.rejects(db.exec(viewMigration), /must be generated/);
+    await db.exec('rollback');
+    assert.deepEqual(originalFields((await db.query('select public.export_booking_backup() as data')).rows[0].data),originalFields(restored));
+    assert.equal((await db.query("select attgenerated from pg_attribute where attrelid='public.members'::regclass and attname='has_pin'")).rows[0].attgenerated,'');
   } finally {await db.close();}
 });

@@ -111,6 +111,37 @@ test('SECURITY: null password cannot delete a booking', async () => {
 test('SECURITY: public users cannot read password hashes despite inherited grants', async () => {
   await assert.rejects(asAnon('select pin_hash from public.members'), /permission denied/);
 });
+
+test('member view uses caller permissions and only safe columns are public for both roles', async () => {
+  const options = (await db.query("select reloptions from pg_class where oid='public.members_public'::regclass")).rows[0].reloptions;
+  assert.ok(options.includes('security_invoker=true'));
+  for (const role of ['anon','authenticated']) {
+    await db.exec('set role '+role);
+    try {
+      assert.equal((await db.query('select * from public.members_public')).rows.length,3);
+      assert.equal((await db.query('select id,name,is_admin,has_pin from public.members')).rows.length,3);
+      await assert.rejects(db.query('select * from public.members'), /permission denied/);
+      await assert.rejects(db.query('select pin_hash from public.members'), /permission denied/);
+      await assert.rejects(db.query('update public.members set is_admin=true'), /permission denied/);
+      await assert.rejects(db.query('update public.members_public set is_admin=true'), /permission denied/);
+    } finally {await db.exec('reset role');}
+  }
+  // A restricted caller sees no rows, proving the view does not bypass RLS.
+  await db.exec('create role restricted_reader; grant usage on schema public to restricted_reader; grant select(id,name,is_admin,has_pin) on public.members to restricted_reader; grant select on public.members_public to restricted_reader; set role restricted_reader');
+  try {assert.equal((await db.query('select * from public.members_public')).rows.length,0);}
+  finally {await db.exec('reset role');}
+});
+
+test('has_pin follows password setup and reset without exposing or accepting a stored password flag', async () => {
+  await db.exec("insert into public.members(name) values ('New')");
+  const hasPin = async () => (await asAnon("select has_pin from public.members_public where name='New'")).rows[0].has_pin;
+  assert.equal(await hasPin(),false);
+  await asAnon("select public.set_pin('New','abcd')");
+  assert.equal(await hasPin(),true);
+  await db.exec("update public.members set pin_hash=null where name='New'");
+  assert.equal(await hasPin(),false);
+  await assert.rejects(db.exec("update public.members set has_pin=true where name='New'"), /can only be updated to DEFAULT/);
+});
 test('temporary tables cannot shadow members inside privileged functions', async () => {
   await db.exec("create temporary table members (id uuid, name text, pin_hash text, is_admin boolean); insert into members values (gen_random_uuid(),'Alice',extensions.crypt('fake',extensions.gen_salt('bf')),true); grant all on members to anon;");
   try { await assert.rejects(booking('Alice','fake'), /Incorrect password/); }

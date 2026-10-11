@@ -22,6 +22,7 @@ create table if not exists public.members (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   pin_hash text,
+  has_pin boolean generated always as (pin_hash is not null) stored,
   is_admin boolean not null default false
 );
 
@@ -38,13 +39,14 @@ create table if not exists public.bookings (
   exclude using gist (during with &&)
 );
 
--- A view that hides pin_hash from anything the browser can query directly.
-create or replace view public.members_public as
-  select id, name, is_admin, (pin_hash is not null) as has_pin
+-- Only safe columns are readable; this view respects the caller's grants and RLS.
+create or replace view public.members_public with (security_invoker = true) as
+  select id, name, is_admin, has_pin
   from public.members;
 
 -- ---------------------------------------------------------------------------
--- Row Level Security: public bookings reads; members only through the safe view.
+-- Row Level Security: public bookings and safe member fields are readable.
+-- Column grants below keep pin_hash private even when member rows are readable.
 -- All writes must go through the RPC functions below.
 -- ---------------------------------------------------------------------------
 
@@ -52,6 +54,10 @@ alter table public.members enable row level security;
 alter table public.bookings enable row level security;
 
 drop policy if exists "members readable by everyone" on public.members;
+drop policy if exists "members safe fields readable" on public.members;
+create policy "members safe fields readable"
+  on public.members for select to anon, authenticated
+  using (true);
 
 drop policy if exists "bookings readable by everyone" on public.bookings;
 create policy "bookings readable by everyone"
@@ -314,6 +320,7 @@ revoke execute on function public.set_pin(text, text), public.verify_pin(text, t
 grant usage on schema public to anon, authenticated, service_role;
 grant select on public.members, public.bookings to service_role;
 grant select on public.members_public to anon, authenticated;
+grant select (id, name, is_admin, has_pin) on public.members to anon, authenticated;
 grant select on public.bookings to anon, authenticated;
 grant execute on function public.set_pin(text, text) to anon, authenticated;
 grant execute on function public.verify_pin(text, text) to anon, authenticated;

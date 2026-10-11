@@ -32,17 +32,25 @@ Branch: `fix/security-and-reliability`.
   produces private SQL for an empty project and does not execute it.
 - Seeds are separate from schema definitions. An existing-project migration and
   a CI workflow make updates and checks reproducible.
+- `members_public` now uses `security_invoker`, respecting caller permissions and
+  member RLS. A generated `has_pin` boolean permits a four-column read allowlist
+  without allowing password-hash reads. The existing frontend response is unchanged.
 
 ## Validation
 
-All 54 automated checks passed locally: 9 app unit/domain checks, 12 simulated
-Apps Script checks, 20 database behavior/security checks, 1 migration/restore
+All 56 automated checks passed locally: 9 app unit/domain checks, 12 simulated
+Apps Script checks, 22 database behavior/security checks, 1 migration/restore
 integration check and 12 headless Chromium checks.
 
 The migration check adds legacy table and column grants to an existing populated
 database, applies the migration twice, verifies data is unchanged, checks both
 `anon` and `authenticated`, and exercises the restore generator's actual SQL.
 It also verifies a restore into non-empty tables is rejected without data loss.
+The view follow-up starts with the deployed owner-backed view and no `has_pin`
+table column, applies both migrations twice in order, and verifies unchanged
+original records, invoker permissions, hash restrictions and backup restoration.
+An incompatible existing `has_pin` column is rejected transactionally. Additional
+checks verify RLS for a caller with no row policy and automatic password-flag updates.
 
 Tests use synthetic data. PGlite is single-connection PostgreSQL, browser APIs are
 mocked, and Google services are simulated. Separate-connection concurrency tests,
@@ -62,6 +70,13 @@ this branch's implementation.
    must pass, and the password-hash read must be denied. Use a disposable project
    for write tests. Consider rotating member passwords after closing hash access;
    this branch does not reset anyone's password automatically.
+   To resolve the `members_public` SECURITY DEFINER advisor warning, also run
+   `supabase/migrations/202610110001_members_view_security.sql`, then rerun the
+   audit and Supabase Security Advisor. This follow-up is repeatable, keeps all
+   records/passwords and requires no frontend or Apps Script changes. Run
+   migrations in filename order; if reapplying the first, reapply the second too.
+   New backup JSON may include the generated `has_pin` field; the restore tool
+   ignores it and PostgreSQL recomputes it. Older snapshots remain compatible.
 4. Publish this branch's static files when ready. The SQL migration keeps the
    existing RPC signatures, so it also works with the prior frontend.
 5. Run `supabase/backup.sql` to update the backup function's schema metadata, then

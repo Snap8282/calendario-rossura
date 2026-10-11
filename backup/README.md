@@ -4,6 +4,9 @@ Use full daily snapshots for this small database. Each JSON contains all members
 (including password hashes and admin flags) and bookings from one SQL statement's
 consistent snapshot. No pagination or incremental deletion tracking is required.
 The generated `during` column is omitted because Postgres recreates it on restore.
+After the member-view migration, snapshots also contain a generated `has_pin`
+boolean. Restore ignores this derived field and Postgres recreates it from the
+password hash; old snapshots without it work with the updated schema too.
 The script keeps 30 days, with at least two newest copies, and only expires old
 copies after verifying a new file. Expired files go to Drive Trash.
 
