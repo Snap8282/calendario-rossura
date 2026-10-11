@@ -153,6 +153,45 @@ test('Enter logs in; Escape dismisses a dialog and returns focus', async ({page}
 test('failed create re-enables form controls and preserves entered fields', async ({page}) => {
   await login(page); await selectDates(page); await page.locator('#booking-note').fill('Keep this');
   await page.route('**/rpc/add_booking',route=>route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({message:'Those dates overlap with an existing booking'})}));
-  await page.locator('#booking-submit').click(); await expect(page.locator('#booking-error')).toContainText('overlap');
+  await page.locator('#booking-submit').click(); await expect(page.locator('#booking-error')).toContainText('Queste date si sovrappongono a una prenotazione esistente.');
   await expect(page.locator('#booking-submit')).toBeEnabled(); await expect(page.locator('#booking-note')).toHaveValue('Keep this');
+});
+
+test.describe('mobile date selection', () => {
+  test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  test('overlapping dates open a cancellable dialog and booking waits for valid dates', async ({page}) => {
+    await login(page);
+    let writes = 0;
+    page.on('request', request => {if (request.url().includes('/rpc/add_booking')) writes++;});
+    const day = date => page.locator(`.fc-daygrid-day[data-date="${date}"]:not(.fc-day-other) .fc-daygrid-day-number`);
+    await day('2026-10-09').tap();
+    await day('2026-10-13').tap();
+    await expect(page.locator('#booking-modal')).toBeVisible();
+    await expect(page.locator('#booking-start')).toHaveValue('2026-10-09');
+    await expect(page.locator('#booking-end')).toHaveValue('2026-10-13');
+    await expect(page.locator('#booking-error')).toContainText('Queste date si sovrappongono');
+    await expect(page.locator('#booking-submit')).toBeDisabled();
+    await page.locator('#booking-start').press('Enter');
+    expect(writes).toBe(0);
+    await page.locator('#booking-cancel').tap();
+    await expect(page.locator('#booking-modal')).toBeHidden();
+    await expect(page.locator('.pending-checkin, .pending-checkout, .pending-between')).toHaveCount(0);
+    await day('2026-10-09').tap();
+    await day('2026-10-13').tap();
+    // Checkout of the existing booking is a valid new check-in.
+    await page.locator('#booking-start').fill('2026-10-12');
+    await expect(page.locator('#booking-error')).toBeHidden();
+    await expect(page.locator('#booking-submit')).toBeEnabled();
+    await page.locator('#booking-end').fill('2026-10-12');
+    await expect(page.locator('#booking-submit')).toBeDisabled();
+    await expect(page.locator('#booking-error')).toContainText('successiva');
+    await page.locator('#booking-end').fill('');
+    await expect(page.locator('#booking-submit')).toBeDisabled();
+    await expect(page.locator('#booking-error')).toContainText('Scegli le date');
+    await page.locator('#booking-end').fill('2026-10-14');
+    await expect(page.locator('#booking-submit')).toBeEnabled();
+    await expect(page.locator('#booking-error')).toBeHidden();
+    await page.locator('#booking-cancel').tap();
+    expect(writes).toBe(0);
+  });
 });

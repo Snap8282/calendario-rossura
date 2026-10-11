@@ -103,6 +103,7 @@ main {
 }
 .calendar-controls p { margin: 0; font-size: 0.9rem; }
 button:disabled { cursor: wait; opacity: 0.6; }
+#booking-submit:disabled { background: var(--muted); cursor: not-allowed; }
 
 button {
   cursor: pointer;

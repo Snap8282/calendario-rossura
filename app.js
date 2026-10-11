@@ -6,6 +6,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // 16 colori volutamente diversi per distinguere meglio le prenotazioni.
 // L'admin usa sempre il grigio.
 const ADMIN_COLOR = "#6b7280";
+const BOOKING_OVERLAP_MESSAGE = "Queste date si sovrappongono a una prenotazione esistente. Scegli un altro intervallo.";
 const COLOR_PALETTE = [
   "#2563eb", "#dc2626", "#16a34a", "#ca8a04",
   "#9333ea", "#0891b2", "#ea580c", "#be185d",
@@ -77,6 +78,7 @@ async function runAction(group, errorId, action) {
     if (busyActions.get(group) === token) {
       busyActions.delete(group);
       ACTION_CONTROLS[group].forEach(id => { el(id).disabled = false; });
+      if (group === 'booking' && !el('booking-modal').classList.contains('hidden')) updateBookingValidation(false);
     }
   }
 }
@@ -521,12 +523,6 @@ function onDateClick(info) {
     return;
   }
 
-  if (hasBookingOverlap(pendingCheckinDate, clickedDate)) {
-    showError("Queste date si sovrappongono a una prenotazione esistente.");
-    renderClickSelection(clickedDate);
-    return;
-  }
-
   renderClickSelection(clickedDate);
   openBookingModal(pendingCheckinDate, clickedDate);
 }
@@ -566,6 +562,29 @@ function initCalendar() {
 // Modale nuova prenotazione
 // ---------------------------------------------------------------------------
 
+function bookingErrorMessage(error) {
+  return error.code === '23P01' || /Those dates overlap with an existing booking/i.test(error.message || '')
+    ? BOOKING_OVERLAP_MESSAGE : error.message;
+}
+
+function updateBookingValidation(clearError = true) {
+  const start = el('booking-start').value;
+  const end = el('booking-end').value;
+  let message = '';
+  if (!start || !end) message = 'Scegli le date di inizio e fine.';
+  else if (end <= start) message = 'La data di check-out deve essere successiva a quella di check-in.';
+  else if (hasBookingOverlap(start, end)) message = BOOKING_OVERLAP_MESSAGE;
+  el('booking-submit').disabled = Boolean(message) || !bookingsReady || busyActions.has('booking');
+  if (message) showModalError('booking-error', message);
+  else if (clearError) hideModalError('booking-error');
+  return !message && bookingsReady;
+}
+
+['booking-start', 'booking-end'].forEach(id => {
+  el(id).addEventListener('input', () => updateBookingValidation());
+  el(id).addEventListener('change', () => updateBookingValidation());
+});
+
 function openBookingModal(startStr, endStr) {
   if (!identity || !bookingsReady) return;
   modalVersion++;
@@ -576,6 +595,7 @@ function openBookingModal(startStr, endStr) {
   el("booking-end").value = endStr.slice(0, 10);
   el("booking-member-label").classList.toggle("hidden", !(me && me.is_admin));
   if (me && me.is_admin) populateMemberSelect(el("booking-member"), me.id);
+  updateBookingValidation();
   showDialog('booking-modal', 'booking-start');
 }
 
@@ -595,7 +615,7 @@ el("booking-submit").addEventListener("click", async () => {
   const me = currentMember();
   const targetMember = me && me.is_admin ? membersById[el("booking-member").value] : me;
 
-  if (!validateBookingDates(start, end, "booking-error")) return;
+  if (!updateBookingValidation()) return;
   if (!targetMember) return showModalError("booking-error", "Scegli per chi creare la prenotazione.");
 
   const rpcName = me && me.is_admin && targetMember.id !== me.id ? "add_booking_for_member" : "add_booking";
@@ -620,7 +640,7 @@ el("booking-submit").addEventListener("click", async () => {
     const { error } = await requestRpc(rpcName, rpcArgs);
     if (!isCurrent()) return;
 
-    if (error) return showModalError("booking-error", error.message);
+    if (error) return showModalError("booking-error", bookingErrorMessage(error));
 
     closeBookingModal();
     await loadBookings();
@@ -692,7 +712,7 @@ el("event-save-btn").addEventListener("click", async () => {
       p_note: el("event-edit-note").value.trim() || null,
     });
     if (!isCurrent()) return;
-    if (error) return showModalError("event-error", error.message);
+    if (error) return showModalError("event-error", bookingErrorMessage(error));
 
     closeBookingDetails();
     await loadBookings();

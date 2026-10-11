@@ -39,12 +39,19 @@ Branch: `fix/security-and-reliability`.
   using Swiss date format (`dd.mm.yyyy`).
   Notes appear without a prefix only when present. Admin accounts remain selectable
   after the alphabetical family list in both member selectors, without account renames.
+- Selecting an overlapping date range opens the existing booking dialog so mobile
+  users can correct the dates or cancel. Date input changes immediately validate
+  missing/reversed/overlapping ranges, show an Italian warning and disable the grey
+  booking button until valid. Server overlap errors are also translated into Italian.
 
 ## Validation
 
-All 56 automated checks passed locally: 9 app unit/domain checks, 12 simulated
+All 57 automated checks passed locally: 9 app unit/domain checks, 12 simulated
 Apps Script checks, 22 database behavior/security checks, 1 migration/restore
-integration check and 12 headless Chromium checks.
+integration check and 13 headless Chromium checks.
+The latest frontend change passed 21 unit/Apps Script checks and all 13 browser
+checks, including a phone-size touch simulation of an invalid selection, cancel,
+date correction and disabled-button behavior without sending a booking request.
 
 The migration check adds legacy table and column grants to an existing populated
 database, applies the migration twice, verifies data is unchanged, checks both
