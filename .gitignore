@@ -5,3 +5,6 @@ test-results/
 backup/backup_folder/
 backup/restore*.sql
 restore*.sql
+# Credentials and reports for manually invoked live database tests.
+.live-test-config.json
+live-test-results/

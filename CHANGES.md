@@ -53,6 +53,15 @@ The latest frontend change passed 21 unit/Apps Script checks and all 13 browser
 checks, including a phone-size touch simulation of an invalid selection, cancel,
 date correction and disabled-button behavior without sending a booking request.
 
+The separate opt-in live runner passed 43 checks against the published GitHub Pages
+site and the real Supabase testing-phase database. It used three temporary accounts
+and exercised admin/member actions in desktop and mobile touch contexts, first
+password setup, real create/edit/delete, cancellation, persistence, overlap feedback,
+permission failures, hash protection and simultaneous overlapping reservations.
+Cleanup removed every temporary member/booking and verified original booking rows
+were unchanged. Credentials remain in a Git-ignored local file; see
+`tests/LIVE_TESTS.md` for repeatable execution and report locations.
+
 The migration check adds legacy table and column grants to an existing populated
 database, applies the migration twice, verifies data is unchanged, checks both
 `anon` and `authenticated`, and exercises the restore generator's actual SQL.
@@ -63,11 +72,12 @@ original records, invoker permissions, hash restrictions and backup restoration.
 An incompatible existing `has_pin` column is rejected transactionally. Additional
 checks verify RLS for a caller with no row policy and automatic password-flag updates.
 
-Tests use synthetic data. PGlite is single-connection PostgreSQL, browser APIs are
-mocked, and Google services are simulated. Separate-connection concurrency tests,
-hosted Supabase gateway tests and actual Apps Script scheduling/Drive integration
-remain deployment validation tasks. Existing vendor files were not edited by
-this branch's implementation.
+Normal tests use synthetic data. PGlite is single-connection PostgreSQL, their
+browser APIs are mocked, and Google services are simulated. The separate live suite
+adds real hosted writes and a concurrent booking check. Concurrent initial-password
+setup, additional browsers/native phone behavior, and actual Apps Script scheduling/
+Drive integration still need separate validation. Existing vendor files were not
+edited by this branch's implementation.
 
 ## Rollout for your already-running Supabase project
 

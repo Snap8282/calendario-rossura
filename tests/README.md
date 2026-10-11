@@ -40,7 +40,11 @@ validation. The GitHub Actions workflow runs the isolated suites on pushes/PRs.
 `npm run audit:live` is a separate, optional, read-only production check. It uses
 the repo's public key and HEAD requests to verify public app reads work and
 password hashes are inaccessible. It never downloads record values or writes
-to Supabase. Do not run write integration tests against the family database.
+to Supabase. For the explicitly authorized testing phase of the live project,
+`tests/run-live.ps1` provides a separate real-write suite with temporary accounts,
+isolated booking IDs and verified cleanup. See `tests/LIVE_TESTS.md`; it never runs
+automatically in the normal test commands or CI. Once the database holds real
+family reservations, prefer a separate Supabase test project for write tests.
 
 ## Next coverage to add
 
@@ -49,7 +53,8 @@ Before deploying SQL changes, run a disposable Supabase project/local stack with
 
 - Real Data API tests of grants/RLS as `anon` and `authenticated`, including every
   write RPC with correct, wrong, empty and null passwords.
-- Two concurrent overlapping reservations: exactly one succeeds.
+- The optional live runner verifies two concurrent overlapping reservations have
+  exactly one winner. Extend this to concurrent edits/deletions as needed.
 - Two simultaneous initial password setups: exactly one succeeds, and the loser
   cannot overwrite the winner. This needs separate connections.
 - Hosted Data API pagination, timeouts, and schema changes. Slow/out-of-order
@@ -58,7 +63,7 @@ Before deploying SQL changes, run a disposable Supabase project/local stack with
 - A full restore drill using a downloaded Drive snapshot, then browser tests
   against the restored project with synthetic member data.
 
-The current browser suite mocks the API so it proves browser behavior and RPC
+The normal browser suite mocks the API so it proves browser behavior and RPC
 arguments, not hosted authorization or cross-system wiring. The backup suite
 mocks Google's services; Drive permissions, scheduling, timeout behavior and
 notification emails still need an initial real Apps Script run.
